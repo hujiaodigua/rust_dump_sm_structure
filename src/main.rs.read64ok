@@ -1,0 +1,53 @@
+use std::env;
+use std::fs;
+
+extern crate memmap;
+use memmap::MmapOptions;
+
+pub fn map_dev_mem(base_address: u64, offset_address: u64) {
+    let base_addr: u64 = base_address;
+
+    // const SYSTEM_TIMER_OFFSET: u64 = 0x0;
+    let offset_addr: u64 = offset_address;
+
+    let f = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/mem")
+        .unwrap();
+
+    // Create a new memory map builder.
+    let mmap = unsafe {
+        MmapOptions::new()
+            // .offset(PERIPHERAL_BASE_ADDRESS + SYSTEM_TIMER_OFFSET + 4)
+            .offset(base_addr + offset_addr)
+            .len(4096)
+            .map_mut(&f)
+            .unwrap()
+    };
+
+    // let bytes = mmap.get(0..4).unwrap();
+    // let bytes = mmap.get(0).unwrap();
+    // loop {
+    // println!("{:#x}", bytes);
+    // }
+    let ptr = mmap.as_ptr() as *const u64;
+    let data: u64 = unsafe { ptr.read_volatile() };
+
+    println!("{:#x}", data);
+}
+
+fn main() {
+    // how to use: sudo ./Rust_memmap_devmem 0xfe40c 0x1
+    let args: Vec<String> = env::args().collect();
+    let mut g_addr_string = &args[1];
+    let mut without_prefix = g_addr_string.trim_start_matches("0x");
+    let g_addr = u64::from_str_radix(without_prefix, 16).unwrap();
+
+    g_addr_string = &args[2];
+    without_prefix = g_addr_string.trim_start_matches("0x");
+    let offset_addr = u64::from_str_radix(without_prefix, 16).unwrap();
+    println!("g_addr: {:#x}", g_addr);
+
+    map_dev_mem(g_addr, offset_addr); // try 0xfe40c
+}
