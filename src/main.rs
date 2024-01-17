@@ -4,6 +4,15 @@ use std::fs;
 extern crate memmap;
 use memmap::MmapOptions;
 
+struct Map_walk_sm_structure {
+    guest_addr_val: u64,
+    pasid_val: u64,
+    bus_num_val: u64,
+    dev_num_val: u64,
+    func_num_val: u64,
+    rta_val: u64,
+}
+
 pub fn map_dev_mem(base_address: u64, offset_address: u64) {
     let base_addr: u64 = base_address;
 
@@ -37,99 +46,110 @@ pub fn map_dev_mem(base_address: u64, offset_address: u64) {
     println!("{:#x}", data);
 }
 
-pub fn walk_sm_structure_entry(
-    guest_addr_val: u64,
-    pasid_val: u64,
-    bus_num_val: u64,
-    dev_num_val: u64,
-    func_num_val: u64,
-    rta_val: u64,
-) {
-    let offset_rte: u64 = bus_num_val * 0x10;
+impl Map_walk_sm_structure {
+    pub fn walk_sm_structure_entry(
+        guest_addr_val: u64,
+        pasid_val: u64,
+        bus_num_val: u64,
+        dev_num_val: u64,
+        func_num_val: u64,
+        rta_val: u64,
+    ) -> i8 {
+        let offset_rte: u64 = bus_num_val * 0x10;
 
-    let f = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/mem")
-        .unwrap();
+        let f = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/mem")
+            .unwrap();
 
-    let mmap_rte = unsafe {
-        MmapOptions::new()
-            .offset(rta_val + offset_rte)
-            .len(4096)
-            .map_mut(&f)
-            .unwrap()
-    };
-
-    println!("===Used Scalable Mode Root Entry===");
-
-    let mut ptr = mmap_rte.as_ptr() as *mut u64; // extract usersapce va pointer from mmap_rte
-    let mut data_0_63: u64 = unsafe { ptr.read_volatile() };
-
-    ptr = ((ptr as usize) + 0x8) as *mut u64; // offset 0x4 equals 32bit, offset 0x8 equals 64bit
-    let mut data_64_127: u64 = unsafe { ptr.read_volatile() };
-    println!("sm root entry   [63-0]={:#016x}", data_0_63);
-    println!("sm root entry [127-64]={:#016x}", data_64_127);
-
-    let mut sm_ctp = 0x0;
-
-    match dev_num_val {
-        0..=15 => {
-            println!("dev_num <= 0xF(15) Using LCTP and SM Lower Context Table");
-            sm_ctp = data_0_63;
-            sm_ctp >>= 12;
-            sm_ctp <<= 12;
-            println!("sm_ctp={:#x}", sm_ctp);
-        }
-
-        16..=31 => {
-            println!("dev_num >= 0x10(16) Using UCTP and SM Upper Context Table");
-            sm_ctp = data_64_127;
-            sm_ctp >>= 12;
-            sm_ctp <<= 12;
-            println!("sm_ctp={:#x}", sm_ctp);
-        }
-        _ => println!("Out of range"),
-    }
-
-    let offset_sm_ctp = dev_num_val << 8 | dev_num_val << 5;
-    if (sm_ctp != 0) {
-        println!("===Used Scalable Mode Context Entry===");
-        let mmap_sm_ctp = unsafe {
+        let mmap_rte = unsafe {
             MmapOptions::new()
-                .offset(sm_ctp + offset_sm_ctp)
+                .offset(rta_val + offset_rte)
                 .len(4096)
                 .map_mut(&f)
                 .unwrap()
         };
 
-        ptr = mmap_sm_ctp.as_ptr() as *mut u64;
-        data_0_63 = unsafe { ptr.read_volatile() };
+        println!("===Used Scalable Mode Root Entry===");
 
-        ptr = ((ptr as usize) + 0x8) as *mut u64;
-        data_64_127 = unsafe { ptr.read_volatile() };
+        let mut ptr = mmap_rte.as_ptr() as *mut u64; // extract usersapce va pointer from mmap_rte
+        let mut data_0_63: u64 = unsafe { ptr.read_volatile() };
 
-        ptr = ((ptr as usize) + 0x8 + 0x8) as *mut u64;
-        let mut data_128_191 = unsafe { ptr.read_volatile() };
+        ptr = ((ptr as usize) + 0x8) as *mut u64; // offset 0x4 equals 32bit, offset 0x8 equals 64bit
+        let mut data_64_127: u64 = unsafe { ptr.read_volatile() };
+        println!("sm root entry   [63-0]={:#016x}", data_0_63);
+        println!("sm root entry [127-64]={:#016x}", data_64_127);
 
-        ptr = ((ptr as usize) + 0x8 + 0x8 + 0x8) as *mut u64;
-        let mut data_192_255 = unsafe { ptr.read_volatile() };
+        let mut sm_ctp: u64 = 0x0;
 
-        println!("sm context entry    [63-0]={:#016x}", data_0_63);
-        println!("sm context entry  [127-64]={:#016x}", data_64_127);
-        println!("sm context entry [191-128]={:#016x}", data_128_191);
-        println!("sm context entry [255-192]={:#016x}", data_192_255);
+        match dev_num_val {
+            0..=15 => {
+                println!("dev_num <= 0xF(15) Using LCTP and SM Lower Context Table");
+                sm_ctp = data_0_63;
+                sm_ctp >>= 12;
+                sm_ctp <<= 12;
+                println!("sm_ctp={:#x}", sm_ctp);
+            }
 
-        let mut pasid_dir_ptr = 0x0;
-        pasid_dir_ptr = data_0_63;
-        pasid_dir_ptr >>= 12;
-        pasid_dir_ptr <<= 12;
-
-        let mut rid_pasid = 0x0;
-        rid_pasid = data_64_127 & 0xFFFFF;
-        if (rid_pasid != 0x0) {
-            println!("Used RID_PASID");
+            16..=31 => {
+                println!("dev_num >= 0x10(16) Using UCTP and SM Upper Context Table");
+                sm_ctp = data_64_127;
+                sm_ctp >>= 12;
+                sm_ctp <<= 12;
+                println!("sm_ctp={:#x}", sm_ctp);
+            }
+            _ => println!("Out of range"),
         }
+
+        let offset_sm_ctp = dev_num_val << 8 | dev_num_val << 5;
+        if (sm_ctp != 0) {
+            println!("===Used Scalable Mode Context Entry===");
+            let mmap_sm_ctp = unsafe {
+                MmapOptions::new()
+                    .offset(sm_ctp + offset_sm_ctp)
+                    .len(4096)
+                    .map_mut(&f)
+                    .unwrap()
+            };
+
+            ptr = mmap_sm_ctp.as_ptr() as *mut u64;
+            data_0_63 = unsafe { ptr.read_volatile() };
+
+            ptr = ((ptr as usize) + 0x8) as *mut u64;
+            data_64_127 = unsafe { ptr.read_volatile() };
+
+            ptr = ((ptr as usize) + 0x8 + 0x8) as *mut u64;
+            let mut data_128_191 = unsafe { ptr.read_volatile() };
+
+            ptr = ((ptr as usize) + 0x8 + 0x8 + 0x8) as *mut u64;
+            let mut data_192_255 = unsafe { ptr.read_volatile() };
+
+            println!("sm context entry    [63-0]={:#016x}", data_0_63);
+            println!("sm context entry  [127-64]={:#016x}", data_64_127);
+            println!("sm context entry [191-128]={:#016x}", data_128_191);
+            println!("sm context entry [255-192]={:#016x}", data_192_255);
+
+            let mut pasid_dir_ptr: u64 = 0x0;
+            pasid_dir_ptr = data_0_63;
+            pasid_dir_ptr >>= 12;
+            pasid_dir_ptr <<= 12;
+
+            let mut rid_pasid: u64 = 0x0;
+            rid_pasid = data_64_127 & 0xFFFFF;
+            if (rid_pasid != 0x0) {
+                println!(
+                    "this device used RID_PASID, rid_pasid_val={:#x}({})",
+                    rid_pasid, rid_pasid
+                );
+            }
+
+            let pasid_val_0_5 = pasid_val & 0x3F;
+            let pasid_val_6_19 = pasid_val >> 6;
+
+            if (pasid_val != 6) {}
+        }
+        return 0;
     }
 }
 
@@ -181,7 +201,7 @@ fn main() {
     let input_rta_val = u64::from_str_radix(without_prefix, 16).unwrap();
     println!("input_rta_val: {:#x}", input_rta_val);
 
-    walk_sm_structure_entry(
+    let ret = Map_walk_sm_structure::walk_sm_structure_entry(
         input_g_addr_val,
         input_pasid_val,
         input_bus_num_val,
