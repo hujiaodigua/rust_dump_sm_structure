@@ -113,16 +113,16 @@ impl Map_walk_sm_structure {
                     .unwrap()
             };
 
-            ptr = mmap_sm_ctp.as_ptr() as *mut u64;
+            ptr = mmap_sm_ctp.as_ptr() as *mut u64; // (sm_ctp + offset_sm_ctp) va
             data_0_63 = unsafe { ptr.read_volatile() };
 
-            ptr = ((ptr as usize) + 0x8) as *mut u64;
+            ptr = ((ptr as usize) + 0x8) as *mut u64; // (sm_ctp + offset_sm_ctp) va + 64bit
             data_64_127 = unsafe { ptr.read_volatile() };
 
-            ptr = ((ptr as usize) + 0x8 + 0x8) as *mut u64;
+            ptr = ((ptr as usize) + 0x8) as *mut u64; // (sm_ctp + offset_sm_ctp) va + 128bit
             let mut data_128_191 = unsafe { ptr.read_volatile() };
 
-            ptr = ((ptr as usize) + 0x8 + 0x8 + 0x8) as *mut u64;
+            ptr = ((ptr as usize) + 0x8) as *mut u64; // (sm_ctp + offset_sm_ctp) va + 192bit
             let mut data_192_255 = unsafe { ptr.read_volatile() };
 
             println!("sm context entry    [63-0]={:#016x}", data_0_63);
@@ -130,10 +130,11 @@ impl Map_walk_sm_structure {
             println!("sm context entry [191-128]={:#016x}", data_128_191);
             println!("sm context entry [255-192]={:#016x}", data_192_255);
 
-            let mut pasid_dir_ptr: u64 = 0x0;
-            pasid_dir_ptr = data_0_63;
-            pasid_dir_ptr >>= 12;
-            pasid_dir_ptr <<= 12;
+            let mut sm_pasid_dir: u64 = 0x0;
+            sm_pasid_dir = data_0_63;
+            sm_pasid_dir >>= 12;
+            sm_pasid_dir <<= 12;
+            println!("sm_pasid_dir={:#x}", sm_pasid_dir);
 
             let mut rid_pasid: u64 = 0x0;
             rid_pasid = data_64_127 & 0xFFFFF;
@@ -147,7 +148,54 @@ impl Map_walk_sm_structure {
             let pasid_val_0_5 = pasid_val & 0x3F;
             let pasid_val_6_19 = pasid_val >> 6;
 
-            if (pasid_val != 6) {}
+            let offset_sm_pasid_dir = pasid_val_6_19 * 8;
+            if (pasid_val != 0) {
+                println!("===Used Scalable Mode Pasid Directroy Entry===");
+                let mmap_sm_pasiddirte = unsafe {
+                    MmapOptions::new()
+                        .offset(sm_pasid_dir + offset_sm_pasid_dir)
+                        .len(4096)
+                        .map_mut(&f)
+                        .unwrap()
+                };
+                ptr = mmap_sm_pasiddirte.as_ptr() as *mut u64;
+                data_0_63 = unsafe { ptr.read_volatile() };
+                println!("sm pasid directory entry [63-0]={:#016x}", data_0_63);
+            }
+
+            let mut sm_pasid: u64 = 0x0;
+            sm_pasid = data_0_63;
+            sm_pasid >>= 12;
+            sm_pasid <<= 12;
+            println!("sm_pasid={:#x}", sm_pasid);
+
+            let offset_sm_pasid = pasid_val_0_5 * 8 * 8;
+            if (pasid_val != 0) {
+                println!("===Used Scalable Mode Pasid Entry===");
+                let mmap_sm_pasid = unsafe {
+                    MmapOptions::new()
+                        .offset(sm_pasid + offset_sm_pasid)
+                        .len(4096)
+                        .map_mut(&f)
+                        .unwrap()
+                };
+                ptr = mmap_sm_pasid.as_ptr() as *mut u64;
+                data_0_63 = unsafe { ptr.read_volatile() };
+
+                ptr = ((ptr as usize) + 0x8) as *mut u64;
+                data_64_127 = unsafe { ptr.read_volatile() };
+
+                ptr = ((ptr as usize) + 0x8) as *mut u64;
+                data_128_191 = unsafe { ptr.read_volatile() };
+
+                ptr = ((ptr as usize) + 0x8) as *mut u64;
+                data_192_255 = unsafe { ptr.read_volatile() };
+
+                println!("sm pasid entry    [63-0]={:#016x}", data_0_63);
+                println!("sm pasid entry  [127-64]={:#016x}", data_64_127);
+                println!("sm pasid entry [191-128]={:#016x}", data_128_191);
+                println!("sm pasid entry [255-192]={:#016x}", data_192_255);
+            }
         }
         return 0;
     }
