@@ -1,8 +1,8 @@
 use std::env;
 use std::fs;
 
-extern crate memmap;
-use memmap::MmapOptions;
+extern crate memmap2;
+use memmap2::MmapOptions;
 
 struct Map_walk_sm_structure {
     guest_addr_val: u64,
@@ -46,6 +46,130 @@ pub fn map_dev_mem(base_address: u64, offset_address: u64) {
     println!("{:#x}", data);
 }
 
+macro_rules! PML4_PAGE_OFFSET {
+    ($x:expr) => {
+        ($x & 0xFFF)
+    };
+}
+
+macro_rules! PML4_1st_OFFSET {
+    ($x:expr) => {
+        (($x & 0xFF8000000000) >> 39) << 3
+    };
+}
+
+macro_rules! PML4_2nd_OFFSET {
+    ($x:expr) => {
+        (($x & 0x7FC0000000) >> 30) << 3
+    };
+}
+
+macro_rules! PML4_3rd_OFFSET {
+    ($x:expr) => {
+        (($x & 0x3FE00000) >> 21) << 3
+    };
+}
+
+macro_rules! PML4_4th_OFFSET {
+    ($x:expr) => {
+        (($x & 0x1FF000) >> 12) << 3
+    };
+}
+
+pub fn walk_first_page_structure_entry(
+    flptptr_val: u64,
+    input_guest_addr_val: u64,
+    f: std::fs::File,
+) {
+    println!("enter walk_sm_structure_entry");
+
+    let bit0_11 = PML4_PAGE_OFFSET!(input_guest_addr_val);
+    let bit12_20 = PML4_4th_OFFSET!(input_guest_addr_val);
+    let bit21_29 = PML4_3rd_OFFSET!(input_guest_addr_val);
+    let bit30_39 = PML4_2nd_OFFSET!(input_guest_addr_val);
+    let bit39_47 = PML4_1st_OFFSET!(input_guest_addr_val);
+
+    println!("input_guest_addr_val={:#x}", input_guest_addr_val);
+    println!("page offset bit0_11={:#x}", bit0_11);
+    println!("4th offset bit12_20={:#x}", bit12_20);
+    println!("3rd offset bit21_29={:#x}", bit21_29);
+    println!("2nd offset bit30_39={:#x}", bit30_39);
+    println!("1th offset bit39_47={:#x}", bit39_47);
+
+    let mut FLPTPTR_1level = 0x0;
+    let mut FLPTPTR_2level = 0x0;
+    let mut FLPTPTR_3level = 0x0;
+    let mut FLPTPTR_4level = 0x0;
+
+    let mmap_1level = unsafe {
+        MmapOptions::new()
+            .offset(flptptr_val + bit39_47)
+            .len(4096)
+            .map_mut(&f)
+            .unwrap()
+    };
+    let mut ptr = mmap_1level.as_ptr() as *mut u64;
+    let mut data_0_63: u64 = unsafe { ptr.read_volatile() };
+    println!("first level page 1st entry [63-0]={:016x}", data_0_63);
+
+    let mut flptptr_val_2level = data_0_63;
+    flptptr_val_2level >>= 12;
+    flptptr_val_2level <<= 12;
+    println!("flptptr_val_2level={:#x}", flptptr_val_2level);
+
+    let mmap_2level = unsafe {
+        MmapOptions::new()
+            .offset(flptptr_val_2level + bit30_39)
+            .len(4096)
+            .map_mut(&f)
+            .unwrap()
+    };
+    ptr = mmap_2level.as_ptr() as *mut u64;
+    data_0_63 = unsafe { ptr.read_volatile() };
+    println!("first level page 2nd entry [63-0]={:016x}", data_0_63);
+
+    let mut flptptr_val_3level = data_0_63;
+    flptptr_val_3level >>= 12;
+    flptptr_val_3level <<= 12;
+    println!("flptptr_val_3level={:#x}", flptptr_val_3level);
+
+    let mmap_3level = unsafe {
+        MmapOptions::new()
+            .offset(flptptr_val_3level + bit21_29)
+            .len(4096)
+            .map_mut(&f)
+            .unwrap()
+    };
+    ptr = mmap_3level.as_ptr() as *mut u64;
+    data_0_63 = unsafe { ptr.read_volatile() };
+    println!("first level page 3rd entry [63-0]={:016x}", data_0_63);
+
+    let mut flptptr_val_4level = data_0_63;
+    flptptr_val_4level >>= 12;
+    flptptr_val_4level <<= 12;
+    println!("flptptr_val_4level={:#x}", flptptr_val_4level);
+
+    let mmap_4level = unsafe {
+        MmapOptions::new()
+            .offset(flptptr_val_4level + bit12_20)
+            .len(4096)
+            .map_mut(&f)
+            .unwrap()
+    };
+    ptr = mmap_4level.as_ptr() as *mut u64;
+    data_0_63 = unsafe { ptr.read_volatile() };
+    println!("first level page 4th entry [63-0]={:016x}", data_0_63);
+
+    let mut flptptr_val_page = data_0_63;
+    flptptr_val_page >>= 12;
+    flptptr_val_page <<= 12;
+    println!("page addr base -- flptptr_val_page={:#x}", flptptr_val_page);
+}
+
+fn print_type_of<T>(_: &T) {
+    println!("{}", std::any::type_name::<T>())
+}
+
 impl Map_walk_sm_structure {
     pub fn walk_sm_structure_entry(
         guest_addr_val: u64,
@@ -56,6 +180,7 @@ impl Map_walk_sm_structure {
         rta_val: u64,
     ) -> i8 {
         let offset_rte: u64 = bus_num_val * 0x10;
+        let mut flptptr: u64 = 0x0;
 
         let f = fs::OpenOptions::new()
             .read(true)
@@ -71,6 +196,11 @@ impl Map_walk_sm_structure {
                 .unwrap()
         };
 
+        println!("print type of f");
+        print_type_of(&f);
+        println!("print type of mmap_rte");
+        print_type_of(&mmap_rte);
+
         println!("===Used Scalable Mode Root Entry===");
 
         let mut ptr = mmap_rte.as_ptr() as *mut u64; // extract usersapce va pointer from mmap_rte
@@ -82,6 +212,7 @@ impl Map_walk_sm_structure {
         println!("sm root entry [127-64]={:#016x}", data_64_127);
 
         let mut sm_ctp: u64 = 0x0;
+        let mut offset_sm_ctp: u64 = 0x0;
 
         match dev_num_val {
             0..=15 => {
@@ -90,6 +221,9 @@ impl Map_walk_sm_structure {
                 sm_ctp >>= 12;
                 sm_ctp <<= 12;
                 println!("sm_ctp={:#x}", sm_ctp);
+
+                offset_sm_ctp = dev_num_val << 8 | func_num_val << 5;
+                println!("offset_sm_ctp={:#x}", offset_sm_ctp);
             }
 
             16..=31 => {
@@ -98,12 +232,14 @@ impl Map_walk_sm_structure {
                 sm_ctp >>= 12;
                 sm_ctp <<= 12;
                 println!("sm_ctp={:#x}", sm_ctp);
+
+                offset_sm_ctp = (dev_num_val - 0x10) << 8 | func_num_val << 5;
+                println!("offset_sm_ctp={:#x}", offset_sm_ctp);
             }
             _ => println!("Out of range"),
         }
 
-        let offset_sm_ctp = dev_num_val << 8 | dev_num_val << 5;
-        if (sm_ctp != 0) {
+        if (sm_ctp != 0 && (sm_ctp + offset_sm_ctp) != 0) {
             println!("===Used Scalable Mode Context Entry===");
             let mmap_sm_ctp = unsafe {
                 MmapOptions::new()
@@ -195,8 +331,15 @@ impl Map_walk_sm_structure {
                 println!("sm pasid entry  [127-64]={:#016x}", data_64_127);
                 println!("sm pasid entry [191-128]={:#016x}", data_128_191);
                 println!("sm pasid entry [255-192]={:#016x}", data_192_255);
+
+                flptptr = data_128_191;
+                flptptr >>= 12;
+                flptptr <<= 12;
+                println!("flptptr={:#x}", flptptr);
             }
         }
+
+        walk_first_page_structure_entry(flptptr, guest_addr_val, f);
         return 0;
     }
 }
