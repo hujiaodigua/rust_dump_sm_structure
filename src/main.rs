@@ -181,6 +181,7 @@ impl Map_walk_sm_structure {
     ) -> i8 {
         let offset_rte: u64 = bus_num_val * 0x10;
         let mut flptptr: u64 = 0x0;
+        let mut slptptr: u64 = 0x0;
 
         let f = fs::OpenOptions::new()
             .read(true)
@@ -213,6 +214,7 @@ impl Map_walk_sm_structure {
 
         let mut sm_ctp: u64 = 0x0;
         let mut offset_sm_ctp: u64 = 0x0;
+        let mut pgtt: u64 = 0x0;
 
         match dev_num_val {
             0..=15 => {
@@ -332,6 +334,13 @@ impl Map_walk_sm_structure {
                 println!("sm pasid entry [191-128]={:#016x}", data_128_191);
                 println!("sm pasid entry [255-192]={:#016x}", data_192_255);
 
+                slptptr = data_0_63;
+                pgtt = (slptptr & 0x1c0) >> 6;
+                println!("pgtt={:#x}", pgtt);
+                slptptr >>= 12;
+                slptptr <<= 12;
+                println!("slptptr={:#x}", slptptr);
+
                 flptptr = data_128_191;
                 flptptr >>= 12;
                 flptptr <<= 12;
@@ -339,7 +348,15 @@ impl Map_walk_sm_structure {
             }
         }
 
-        walk_first_page_structure_entry(flptptr, guest_addr_val, f);
+        let mut ptr_val: u64 = 0x0;
+        if (pgtt == 0x1) {
+            ptr_val = flptptr;
+        } else if (pgtt == 0x2) {
+            ptr_val = slptptr;
+        }
+
+        walk_first_page_structure_entry(ptr_val, guest_addr_val, f);
+
         return 0;
     }
 }
