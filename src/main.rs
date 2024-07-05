@@ -281,6 +281,18 @@ impl Map_walk_sm_structure {
                     "this device used RID_PASID, rid_pasid_val={:#x}({})",
                     rid_pasid, rid_pasid
                 );
+                if (pasid_val == 0) {
+                    rid_pasid = pasid_val;
+                    println!(
+                        "used rid_pasid repalce pasid, pasid_val=rid_pasid_val={:#x}({})",
+                        pasid_val, pasid_val
+                    );
+                } else {
+                    println!(
+                        "input pasid !=0, walk table used input pasid={:#x}({})",
+                        pasid_val, pasid_val
+                    );
+                }
             }
 
             let pasid_val_0_5 = pasid_val & 0x3F;
